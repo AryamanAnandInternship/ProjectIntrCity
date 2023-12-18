@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Geolocation</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.8.0/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            height: 100vh;
+            font-family: 'Arial', sans-serif;
+        }
+
+        #map {
+            flex: 1;
+            height: 100vh;
+            margin: 10px;
+        }
+
+        #sidebar {
+            width: 300px;
+            height: 100vh;
+            background-color: #000;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        #sidebar-dropdowns {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        #search-form,
+        #route-dropdown,
+        #bus-dropdown,
+        #delays-on-time {
+            background: #333;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        button {
+            background-color: #4caf50;
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        #distance-info {
+            margin-top: 10px;
+            color: #fff;
+        }
+
+        #distance-info span {
+            font-weight: bold;
+        }
+    </style>
+
+</head>
+
+<body>
+    <div id="map"></div>
+    <div id="sidebar">
+        <div id="sidebar-dropdowns">
+            <div id="search-form">
+                <label for="start-input">Start Point:</label>
+                <input type="text" id="start-input" placeholder="Enter start location" />
+                <br />
+                <label for="end-input">End Point:</label>
+                <input type="text" id="end-input" placeholder="Enter end location" />
+                <br />
+                <button onclick="findRoute()">Find Route</button>
+            </div>
+            <div id="route-dropdown">
+                <label for="route-select">Select Route:</label>
+                <select id="route-select" onchange="selectRoute()">
+                    <option value="bangalore-chennai">Bangalore to Chennai</option>
+                    <option value="delhi-amritsar">Delhi to Amritsar</option>
+                    <option value="mumbai-goa">Mumbai to Goa</option>
+                    <option value="amritsar-delhi">Amritsar to Delhi</option>
+                    <option value="bangalore-hyderabad">Bangalore to Hyderabad</option>
+                    <option value="delhi-lucknow">Delhi to Lucknow</option>
+                    <option value="goa-mumbai">Goa to Mumbai</option>
+                    <option value="vijayawada-chennai">Vijayawada to Chennai</option>
+                </select>
+            </div>
+            <div id="bus-dropdown">
+                <label for="bus-id-select">Select Bus ID:</label>
+                <select id="bus-id-select" onchange="updateBusRoute()">
+                    <option value="192013">192013</option>
+                    <!-- Add more options as needed -->
+                </select>
+            </div>
+            <div id="delays-on-time">
+                <label for="delay-status-select">Check for the delays or on-time movements for the selected busID:</label>
+                <select id="delay-status-select" onchange="updateBusRoute()">
+                    <option value="show-delays">Show me the delay points</option>
+                    <option value="show-on-time">Show me on-time points</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.8.0/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script>
+        var map = L.map('map').setView([12.9716, 77.5946], 6);
+        mapLink = "<a href='http://openstreetmap.org'>OpenStreetMap</a>";
+        L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png', { attribution: 'Leaflet &copy; ' + mapLink + ', contribution', maxZoom: 18 }).addTo(map);
+
+        var intrcityIcon = L.icon({
+            iconUrl: 'img/intrcity.png',
+            iconSize: [70, 70]
+        })
+
+        var marker = L.marker([12.9716, 77.5946], { icon: intrcityIcon }).addTo(map);
+
+        var control = L.Routing.control({
+            waypoints: [],
+            routeWhileDragging: true,
+            lineOptions: {
+                styles: [{ color: 'black', opacity: 0.8, weight: 6 }]
+            }
+        }).addTo(map);
+
+        function findRoute() {
+            var startInput = document.getElementById('start-input').value;
+            var endInput = document.getElementById('end-input').value;
+
+            control.setWaypoints([
+                L.latLng(12.9716, 77.5946), // default start point
+                L.latLng(0, 0) // dummy end point
+            ]);
+
+            geocodeAddress(startInput, function (startLocation) {
+                if (startLocation) {
+                    control.spliceWaypoints(0, 1, startLocation);
+                    marker.setLatLng(startLocation);
+                }
+            });
+
+            geocodeAddress(endInput, function (endLocation) {
+                if (endLocation) {
+                    control.spliceWaypoints(control.getWaypoints().length - 1, 1, endLocation);
+                    marker.setLatLng(endLocation);
+                }
+
+                control.route();
+            });
+        }
+
+        function geocodeAddress(address, callback) {
+            fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(address))
+                .then(response => response.json())
+                .then(data => {
+                    if (data.length > 0) {
+                        callback(L.latLng(data[0].lat, data[0].lon));
+                    } else {
+                        console.error("Geocoding failed for address: " + address);
+                        callback(null);
+                    }
+                })
+                .catch(error => {
+                    console.error("Geocoding failed:", error);
+                    callback(null);
+                });
+        }
+
+        function selectRoute() {
+            var routeSelect = document.getElementById('route-select');
+            var selectedRoute = routeSelect.options[routeSelect.selectedIndex].value;
+
+            switch (selectedRoute) {
+                case 'bangalore-chennai':
+                    setRouteWaypoints([12.9716, 77.5946], [13.0827, 80.2707]);
+                    break;
+                case 'delhi-amritsar':
+                    setRouteWaypoints([28.6139, 77.2090], [31.6340, 74.8723]);
+                    break;
+                case 'mumbai-goa':
+                    setRouteWaypoints([19.0760, 72.8777], [15.2993, 74.1240]);
+                    break;
+                case 'amritsar-delhi':
+                    setRouteWaypoints([31.6340, 74.8723], [28.6139, 77.2090]);
+                    break;
+                case 'bangalore-hyderabad':
+                    setRouteWaypoints([12.9716, 77.5946], [17.3850, 78.4867]);
+                    break;
+                case 'delhi-lucknow':
+                    setRouteWaypoints([28.6139, 77.2090], [26.8467, 80.9462]);
+                    break;
+                case 'goa-mumbai':
+                    setRouteWaypoints([15.2993, 74.1240], [19.0760, 72.8777]);
+                    break;
+                case 'vijayawada-chennai':
+                    setRouteWaypoints([16.5062, 80.6480], [13.0827, 80.2707]);
+                    break;
+                default:
+                    console.error("Invalid route selected");
+            }
+        }
+
+        function setRouteWaypoints(startCoords, endCoords) {
+            control.setWaypoints([
+                L.latLng(startCoords),
+                L.latLng(endCoords)
+            ]);
+
+            marker.setLatLng(L.latLng(startCoords));
+            control.route();
+        }
+
+        function drawRoute(routeCoords) {
+            L.Routing.line(routeCoords).addTo(map);
+        }
+
+        control.on('routeselected', function (e) {
+            var route = e.route;
+            var coords = route.coordinates;
+            drawRoute(coords);
+            animateMarker(coords);
+            colorCodeRoute(route);
+        });
+
+        function animateMarker(coords) {
+            var index = 0;
+
+            function move() {
+                marker.setLatLng(coords[index]);
+                index++;
+                if (index < coords.length) {
+                    requestAnimationFrame(move);
+                }
+            }
+
+            move();
+        }
+
+        function colorCodeRoute(route) {
+            var distance = route.summary.totalDistance; // in meters
+            var travelTime = route.summary.totalTime; // in seconds
+
+            // Normalize distance and travel time to a scale of 0 to 1
+            var normalizedDistance = normalize(distance, 0, 600000); // Assuming max distance is 500 km 
+            var normalizedTime = normalize(travelTime, 0, 18000); // Assuming max time is 5 hours
+
+            // Convert normalized values to HSL color
+            var hue = (1 - normalizedTime) * 120; // Hue ranges from 0 to 120
+            var saturation = 100;
+            var lightness = 50;
+
+            var color = 'hsl(' + hue + ',' + saturation + '%,' + lightness + '%)';
+
+            // Update the route line color
+            control.getPlan().options.lineOptions.styles = [{ color: color, opacity: 0.8, weight: 6 }];
+            control.setWaypoints(control.getWaypoints()); // Refresh the route to apply the new color
+        }
+
+        // Helper function to normalize a value to a range of 0 to 1
+        function normalize(value, min, max) {
+            return (value - min) / (max - min);
+        }
+
+
+ function updateBusRoute() {
+    var busIdSelect = document.getElementById('bus-id-select');
+    var selectedBusId = busIdSelect.options[busIdSelect.selectedIndex].value;
+
+    // Load and display the bus route for the selected busId
+    loadBusRoute(selectedBusId);
+ }
+
+ // Function to load bus route data based on the selected busId
+ function loadBusRoute(busId) {
+  // Use axios to fetch bus route data from the server
+  axios.get(`http://127.0.0.1:5500/Leaflet-Basic-master/Leaflet-Basic-master/routing/index.html/${busId}`)
+    .then(response => {
+      // Handle the bus route data and draw the path
+      handleBusRoute(response.data);
+    })
+    .catch(error => console.error('Error loading bus route data:', error));
+}
+
+
+ // Function to handle bus route data and draw the path
+ function handleBusRoute(busRouteData) {
+    // Create an array to store LatLng objects for the route
+    var routeCoords = [];
+
+    // Process each bus stop in the route data
+    busRouteData.forEach(busStop => {
+      // Use the geocodeAddress function to convert the bus stop location to LatLng coordinates
+      geocodeAddress(busStop.point_name, function (location) {
+        if (location) {
+          // Add the LatLng object to the routeCoords array
+          routeCoords.push(L.latLng(location.lat, location.lon));
+
+          // If it's the last bus stop, draw the route and animate the marker
+          if (busStop === busRouteData[busRouteData.length - 1]) {
+            drawRoute(routeCoords);
+            animateMarker(routeCoords);
+          }
+        }
+      });
+    });
+ }
+
+ // Add an event listener to the bus id select dropdown
+ document.getElementById('bus-id-select').addEventListener('change', updateBusRoute);
+
+    </script>
+</body>
+
+</html>
