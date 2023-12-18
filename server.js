@@ -7,10 +7,10 @@ const port = 3000; // or any port you prefer
 
 // Create a MySQL pool
 const pool = mysql.createPool({
-  host: '172.16.123.198',
-  user: 'readonly',
-  password: 're@diQ0_yL8^sM0?kV6)',
-  database: 'gds_operations',
+  host: '',
+  user: ' ',
+  password: '',
+  database: ' ',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
